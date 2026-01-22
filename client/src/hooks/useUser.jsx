@@ -1,3 +1,4 @@
 export function useUser() {
-    return { id: document.cookie.match(/userId=(?<id>[^;]+);?$/).groups.id }
+    const match = document.cookie.match(/(?:^|;\s*)userId=(?<id>[^;]+)/);
+    return { id: match?.groups?.id ?? null };
 }

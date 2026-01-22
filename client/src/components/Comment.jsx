@@ -3,6 +3,10 @@ import {FaEdit, FaHeart, FaReply, FaTrash} from 'react-icons/fa'
 import {usePost} from "../contexts/PostContext.jsx";
 import {CommentList} from "./CommentList.jsx";
 import {useState} from "react";
+import {CommentForm} from "./CommentForm.jsx";
+import {createComment, deleteComment, updateComment} from "../services/comments.jsx";
+import {useAsyncFn} from "../hooks/useAsync.jsx";
+import {useUser} from "../hooks/useUser.jsx";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
@@ -11,8 +15,48 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 export function Comment({ id, message, user, createdAt}) {
     const [areChildrenHidden, setAreChildrenHidden] = useState(false);
-    const { getReplies } = usePost()
+    const [isReplying, setIsReplying] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const { post, getReplies, createLocalComment, updateLocalComment, deleteLocalComment } = usePost()
+    const createCommentFn = useAsyncFn(createComment)
+    const updateCommentFn = useAsyncFn(updateComment)
+    const deleteCommentFn = useAsyncFn(deleteComment)
     const childComments = getReplies(id)
+    const currentUser = useUser()
+
+    console.log(currentUser)
+    console.log("Comparison Check:", {
+        commentAuthorId: user.id,
+        currentUserId: currentUser.id,
+        isMatch: user.id === currentUser.id
+    })
+    console.log("CURRENT USER", currentUser)
+    console.log("COMMENT USER", user)
+
+    function onCommentReply(message) {
+        return createCommentFn
+            .execute({ postId: post.id, message, parentId: id })
+            .then(comment => {
+                setIsReplying(false)
+                createLocalComment(comment)
+            })
+    }
+
+    function onCommentUpdate(message) {
+        return updateCommentFn
+            .execute({ postId: post.id, message, id })
+            .then(comment => {
+                setIsEditing(false)
+                updateLocalComment(id, comment.message)
+            })
+    }
+
+    function onCommentDelete() {
+        return deleteCommentFn
+            .execute({ postId: post.id, id })
+            .then(() => deleteLocalComment(id))
+    }
+
     return (
         <>
             <div className="comment">
@@ -20,14 +64,60 @@ export function Comment({ id, message, user, createdAt}) {
                     <span className="name">{user.name}</span>
                     <span className="date">{dateFormatter.format(Date.parse(createdAt))}</span>
                 </div>
-                <div className="message">{message}</div>
+                {isEditing ? (
+                    <CommentForm
+                        autoFocus
+                        initialValue={message}
+                        onSubmit={onCommentUpdate}
+                        loading={updateCommentFn.loading}
+                        error={updateCommentFn.error}
+                    />
+                ) : (
+                    <div className="message">{message}</div>
+                )}
                 <div className="footer">
                     <IconBtn Icon={FaHeart} aria-label="Like"> 2 </IconBtn>
-                    <IconBtn Icon={FaReply} aria-label="Reply" />
-                    <IconBtn Icon={FaEdit} aria-label="Edit" />
-                    <IconBtn Icon={FaTrash} aria-label="Delete" color="danger"/>
+
+                    <IconBtn
+                        onClick={() => setIsReplying(prev => !prev)}
+                        isActive={isReplying}
+                        Icon={FaReply}
+                        aria-label={isReplying ? "Cancel Reply" : "Reply"}
+                    />
+
+                    { user.id === currentUser.id  && (
+                        <>
+                            <IconBtn
+                                onClick={() => setIsEditing(prev => !prev)}
+                                isActive={isEditing}
+                                Icon={FaEdit}
+                                aria-label={ isEditing ? "Cancel Edit" : "Edit" }
+                            />
+
+                            <IconBtn
+                                disabled={deleteCommentFn.loading}
+                                onClick={onCommentDelete}
+                                Icon={FaTrash}
+                                aria-label="Delete"
+                                color="danger"
+                            />
+                        </>
+                    )}
+
                 </div>
+                {deleteCommentFn.error && (
+                    <div className="error-msg mt-1">{deleteCommentFn.error}</div>
+                )}
             </div>
+            {isReplying && (
+                <div className="mt-1 ml-3">
+                    <CommentForm
+                        autoFocus
+                        onSubmit={onCommentReply}
+                        loading={createCommentFn.loading}
+                        error={createCommentFn.error} />
+                </div>
+            )}
             {childComments?.length > 0 && (
                 <>
                     <div className={`nested-comments-stack ${
